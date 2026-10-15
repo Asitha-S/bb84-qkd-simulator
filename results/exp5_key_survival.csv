@@ -1,0 +1,5 @@
+scenario,raw,sifted,reconciled,amplified,qber_estimate,leakage_bits,status
+"Clean channel, no Eve",40000,19925,17925,17925,0,24,extracted
+"Fibre noise 2%, no Eve",40000,20025,18025,12040,0.0245,3045,extracted
+Noise 2% + Eve f = 0.2,40000,19783,17783,4702,0.0705,8497,extracted
+Full intercept-resend f = 1,40000,19960,0,0,0.2615,0,abort

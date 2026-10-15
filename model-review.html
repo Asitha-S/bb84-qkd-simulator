@@ -1,0 +1,972 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>BB84 Model Specification</title>
+<meta name="description" content="How the probability model in the bb84 package represents qubits, the channel and classical post-processing, written from the module source.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Serif:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --surface: #ffffff;
+  --surface-2: #eceff6;
+  --text: #141824;
+  --text-2: #3d4457;
+  --muted: #646d83;
+  --rule: #d9dee8;
+  --rule-strong: #b4bccd;
+  /* Two hue roles only: the Z and X bases. Everything else is ink and weight,
+     so every distinction survives greyscale printing. */
+  --accent: #141824;
+  --accent-soft: #eceff6;
+  --z: #1d4ed8;
+  --x: #be185d;
+  --solid: #141824;
+  --on-solid: #ffffff;
+  --hatch: #9aa3b5;
+  --hatch-bg: #ffffff;
+
+  --font-serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0e1118;
+    --surface: #151a24;
+    --surface-2: #1c2230;
+    --text: #e4e8f1;
+    --text-2: #b5bccb;
+    --muted: #8a93a8;
+    --rule: #272e3d;
+    --rule-strong: #3b4558;
+    --accent: #e4e8f1;
+    --accent-soft: #1c2230;
+    --z: #7aa7f8;
+    --x: #f27bb0;
+    --solid: #e4e8f1;
+    --on-solid: #0e1118;
+    --hatch: #4a556b;
+    --hatch-bg: #151a24;
+  }
+}
+
+/* Print: always the light values on a white page, whatever the reader's OS
+   theme, and never split the matrix, callout or a table across pages. */
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-2: #eceff6;
+    --text: #141824;
+    --text-2: #3d4457;
+    --muted: #646d83;
+    --rule: #d9dee8;
+    --rule-strong: #b4bccd;
+    --accent: #141824;
+    --accent-soft: #eceff6;
+    --z: #1d4ed8;
+    --x: #be185d;
+    --solid: #141824;
+    --on-solid: #ffffff;
+    --hatch: #9aa3b5;
+    --hatch-bg: #ffffff;
+  }
+  .page { padding-top: 0; }
+  .matrix-fig, .callout, .table-wrap, .split, .stage, .omissions > div, .party { break-inside: avoid; }
+  h2, h3 { break-after: avoid; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.page {
+  max-width: 50rem;
+  margin: 0 auto;
+  padding: 3.5rem clamp(16px, 5vw, 2.5rem) 5rem;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+h1 {
+  font-size: clamp(1.85rem, 5.2vw, 2.6rem);
+  margin: 0.4rem 0 1rem;
+  letter-spacing: -0.01em;
+}
+
+h2 {
+  font-size: clamp(1.45rem, 3.6vw, 1.75rem);
+  margin: 0 0 1.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+h3 {
+  font-size: 1.15rem;
+  margin: 2.25rem 0 0.75rem;
+}
+
+p { margin: 0 0 1.1rem; }
+
+a { color: var(--accent); text-underline-offset: 0.15em; }
+
+code, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+code {
+  background: var(--surface-2);
+  padding: 0.08em 0.35em;
+  border-radius: 3px;
+}
+
+/* ---------- Masthead ---------- */
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0;
+}
+
+.lede {
+  font-size: 1.15rem;
+  color: var(--text-2);
+  max-width: 40rem;
+}
+
+.meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1.25rem;
+  margin: 1.75rem 0 0;
+  padding: 1rem 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.92rem;
+}
+
+.meta dt {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding-top: 0.15rem;
+}
+
+.meta dd { margin: 0; color: var(--text-2); }
+
+.toc {
+  margin: 1.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1.25rem;
+  font-size: 0.92rem;
+}
+
+.toc a { color: var(--text-2); text-decoration: none; }
+.toc a:hover { color: var(--accent); text-decoration: underline; }
+.toc .n { font-family: var(--font-mono); color: var(--accent); margin-right: 0.35rem; }
+
+/* ---------- Sections ---------- */
+
+section {
+  margin-top: 4.5rem;
+  padding-top: 2.25rem;
+  border-top: 1px solid var(--rule-strong);
+}
+
+.secnum {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--accent);
+  border: 1.5px solid var(--accent);
+  border-radius: 2px;
+  min-width: 1.9rem;
+  padding: 0.05rem 0.4rem;
+  text-align: center;
+  position: relative;
+  top: -0.2rem;
+}
+
+.source {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: -0.5rem 0 1.5rem;
+}
+
+.note {
+  font-size: 0.95rem;
+  color: var(--text-2);
+}
+
+/* Basis labels: one hue per basis, everywhere a basis is named */
+
+.b {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.92em;
+  white-space: nowrap;
+}
+
+.b::before {
+  content: "";
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.3em;
+  border-radius: 1px;
+  background: currentColor;
+  position: relative;
+  top: -0.05em;
+}
+
+.b-z { color: var(--z); }
+.b-x { color: var(--x); }
+.b-x::before { transform: rotate(45deg) scale(0.82); }
+
+/* ---------- Tables ---------- */
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 1.25rem 0 1.5rem;
+  border: 1px solid var(--rule);
+  background: var(--surface);
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.93rem;
+  line-height: 1.5;
+}
+
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.65rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+tr:last-child > td, tr:last-child > th { border-bottom: 0; }
+
+thead th {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--rule-strong);
+}
+
+.stages { min-width: 38rem; }
+.stages td:first-child { font-weight: 600; white-space: nowrap; }
+.stages td:nth-child(2) { white-space: nowrap; }
+
+.table-wrap.fit { width: fit-content; max-width: 100%; }
+.states { min-width: 16rem; }
+.states th[scope="row"] { width: 5.5rem; }
+.states td { font-family: var(--font-mono); }
+
+.nowrap { white-space: nowrap; }
+
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* ---------- Measurement matrix ---------- */
+
+.matrix-fig { margin: 1.5rem 0 1.75rem; }
+
+.matrix {
+  display: grid;
+  grid-template-columns: minmax(5.5rem, 8.5rem) 1fr 1fr;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.matrix > div {
+  padding: 0.85rem 0.9rem;
+  border-right: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+
+.matrix > div:nth-child(3n) { border-right: 0; }
+.matrix > div:nth-last-child(-n+3) { border-bottom: 0; }
+
+.matrix .corner {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.4;
+  background: var(--surface-2);
+}
+
+.matrix .colhead, .matrix .rowhead {
+  font-size: 0.85rem;
+  color: var(--text-2);
+  background: var(--surface-2);
+  line-height: 1.35;
+}
+
+.matrix .colhead .b, .matrix .rowhead .b { display: block; font-size: 1.05rem; margin-top: 0.15rem; }
+
+.matrix .cell { line-height: 1.35; }
+
+.matrix .cell strong {
+  display: block;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.matrix .cell span {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  color: var(--text-2);
+}
+
+.matrix .cell { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+/* Exact: solid fill. Coin flip: hatched fill plus a dashed inset outline, so the
+   pair still differs if a printer drops background graphics. */
+.matrix .exact { background: var(--solid); color: var(--on-solid); }
+.matrix .exact strong, .matrix .exact span { color: var(--on-solid); }
+
+.matrix .coin {
+  background:
+    repeating-linear-gradient(45deg, var(--hatch) 0 1.5px, transparent 1.5px 7px),
+    var(--hatch-bg);
+  outline: 2px dashed var(--text-2);
+  outline-offset: -5px;
+}
+.matrix .coin strong, .matrix .coin span {
+  width: fit-content;
+  max-width: 100%;
+  background: var(--hatch-bg);
+  padding: 0 0.3em;
+  margin-left: -0.3em;
+}
+.matrix .coin strong { color: var(--text); }
+
+figcaption {
+  font-size: 0.88rem;
+  color: var(--muted);
+  margin-top: 0.6rem;
+}
+
+/* ---------- Per-qubit sequence ---------- */
+
+.journey {
+  list-style: none;
+  margin: 1.75rem 0 0;
+  padding: 0;
+}
+
+.stage {
+  display: grid;
+  grid-template-columns: 2.25rem minmax(0, 1fr);
+  column-gap: 1rem;
+  position: relative;
+  padding-bottom: 2rem;
+}
+
+.stage::before {
+  content: "";
+  position: absolute;
+  left: calc(1.125rem - 1px);
+  top: 2.4rem;
+  bottom: 0.15rem;
+  width: 2px;
+  background: var(--rule-strong);
+}
+
+.stage:last-child { padding-bottom: 0; }
+.stage:last-child::before { display: none; }
+
+.marker {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  color: var(--accent);
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.stage-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.75rem;
+  margin: 0.2rem 0 0.5rem;
+}
+
+.stage-head h3 { margin: 0; font-size: 1.2rem; }
+
+.stage-head .mod {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.tag {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 2px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+.tag.qber {
+  color: var(--on-solid);
+  border-color: var(--solid);
+  background: var(--solid);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.stage p:last-child { margin-bottom: 0; }
+
+/* ---------- Composition callout ---------- */
+
+.callout {
+  margin: 2.5rem 0 0;
+  padding: 1.4rem clamp(1rem, 4vw, 1.75rem);
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+}
+
+.callout h3 { margin-top: 0; }
+
+.formula {
+  font-family: var(--font-mono);
+  font-size: clamp(1.05rem, 3.6vw, 1.35rem);
+  font-weight: 500;
+  color: var(--text);
+  margin: 0.25rem 0 1rem;
+}
+
+.formula-sm { font-size: 1rem; }
+
+.work {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.15rem 0;
+  margin: 1rem 0 1rem;
+  padding: 0.9rem 0 0.9rem;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.95rem;
+}
+
+.work .expr { font-family: var(--font-mono); font-size: 0.88rem; }
+.work .why { display: block; font-family: var(--font-sans); font-size: 0.82rem; color: var(--muted); }
+.work .val { padding-left: 1rem; font-family: var(--font-mono); font-size: 0.88rem; text-align: right; font-variant-numeric: tabular-nums; }
+.work .total { border-top: 1px solid var(--rule); padding-top: 0.45rem; margin-top: 0.3rem; font-weight: 600; }
+
+/* ---------- Real bits vs formula ---------- */
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 2rem 0 1.5rem;
+  border: 1px solid var(--rule-strong);
+  background: var(--surface);
+}
+
+.split > div { padding: 1.2rem 1.25rem 1.1rem; }
+.split > div + div { border-left: 1px solid var(--rule-strong); }
+
+.split .label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin: 0 0 0.3rem;
+}
+
+.split h3 { margin: 0 0 0.75rem; font-size: 1.1rem; }
+
+.split ul { margin: 0; padding-left: 1.1rem; font-size: 0.94rem; }
+.split li { margin-bottom: 0.55rem; }
+.split li:last-child { margin-bottom: 0; }
+
+/* ---------- Lists ---------- */
+
+.assumptions {
+  list-style: none;
+  margin: 0.75rem 0 1rem;
+  padding: 0;
+  counter-reset: a;
+  border-top: 1px solid var(--rule);
+}
+
+.assumptions li {
+  counter-increment: a;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.97rem;
+}
+
+.assumptions li::before {
+  content: "A" counter(a);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--muted);
+  padding-top: 0.15rem;
+}
+
+.omissions { margin: 1.25rem 0 0; }
+
+.omissions > div {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 0.25rem 1.25rem;
+  padding: 1rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.omissions > div:last-child { border-bottom: 1px solid var(--rule); }
+
+.omissions dt { font-weight: 600; }
+.omissions dd { margin: 0; font-size: 0.97rem; color: var(--text-2); }
+.omissions dd p { margin: 0 0 0.5rem; }
+.omissions dd p:last-child { margin: 0; }
+
+/* ---------- Qiskit gate strips ---------- */
+
+.circuits { margin: 1.5rem 0 1.75rem; border-top: 1px solid var(--rule); }
+
+.party {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  align-items: center;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.party .who { font-weight: 600; }
+.party .who small { display: block; font-weight: 400; font-size: 0.78rem; color: var(--muted); }
+
+.wire {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.5rem 0.35rem;
+}
+
+.gate {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.gate .g {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.95rem;
+  min-width: 2.4rem;
+  padding: 0.2rem 0.5rem;
+  text-align: center;
+  border: 1.5px solid var(--text-2);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.gate.cond .g { border-style: dashed; }
+.gate.meas .g { border-color: var(--solid); background: var(--solid); color: var(--on-solid); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+.gate .when {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.wire .link {
+  font-family: var(--font-mono);
+  color: var(--rule-strong);
+  padding-top: 0.25rem;
+}
+
+footer {
+  margin-top: 4.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+footer p { margin: 0 0 0.4rem; }
+
+/* ---------- Narrow screens ---------- */
+
+@media (max-width: 40rem) {
+  body { font-size: 1rem; }
+  .page { padding-top: 2.25rem; }
+  .split { grid-template-columns: 1fr; }
+  .split > div + div { border-left: 0; border-top: 1px solid var(--rule-strong); }
+  .omissions > div { grid-template-columns: 1fr; }
+  .party { grid-template-columns: 1fr; }
+  .matrix > div { padding: 0.7rem 0.6rem; }
+  .matrix .cell strong { font-size: 0.98rem; }
+  .meta { grid-template-columns: 1fr; gap: 0 0; }
+  .meta dd { margin-bottom: 0.5rem; }
+  .meta dd:last-child { margin-bottom: 0; }
+
+  th, td { padding: 0.6rem 0.6rem; }
+
+  /* Stages table: stack each row so the description column stays readable */
+  .stages { min-width: 0; }
+  .stages thead { display: none; }
+  .stages tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: baseline;
+    column-gap: 0.75rem;
+    border-bottom: 1px solid var(--rule);
+    padding: 0.35rem 0;
+  }
+  .stages tr:last-child { border-bottom: 0; }
+  .stages td { border-bottom: 0; }
+  .stages td:nth-child(2) { padding-left: 0; }
+  .stages td:nth-child(3) { grid-column: 1 / -1; padding-top: 0; }
+}
+</style>
+</head>
+<body>
+<main class="page">
+
+<header>
+  <p class="eyebrow">bb84 package · Layer 1 model specification</p>
+  <h1>How the BB84 probability model works</h1>
+  <p class="lede">This specification describes what the simulator in <code>bb84/</code> computes: how a qubit is represented, what happens to it between Alice and Bob, and how classical post-processing turns sifted bits into an estimated final key length. Every statement is taken from the module source.</p>
+  <dl class="meta">
+    <dt>Layer 1</dt><dd>Plain NumPy probability model. Runs every experiment. Does not import Qiskit.</dd>
+    <dt>Layer 2</dt><dd><code>qiskit_demo.py</code>, circuit-level cross-check only (section 5).</dd>
+    <dt>Defaults</dt><dd>Seed 42, 40,000 raw qubits, 2,000-bit disclosed sample (<code>runner.PipelineConfig</code>).</dd>
+  </dl>
+  <nav aria-label="Sections">
+    <ol class="toc">
+      <li><a href="#qubits"><span class="n">1</span>Qubits and measurement</a></li>
+      <li><a href="#journey"><span class="n">2</span>Each qubit, in order</a></li>
+      <li><a href="#post"><span class="n">3</span>Classical post-processing</a></li>
+      <li><a href="#omitted"><span class="n">4</span>What the model leaves out</a></li>
+      <li><a href="#qiskit"><span class="n">5</span>The Qiskit layer</a></li>
+    </ol>
+  </nav>
+</header>
+
+<!-- ============================================================ 1 -->
+<section id="qubits">
+  <h2><span class="secnum">1</span>Qubits and measurement</h2>
+  <p class="source">alice.py · bob.py</p>
+
+  <p>A qubit is the pair <code>(bit, basis)</code>. <code>alice.prepare(n)</code> returns two <code>uint8</code> arrays of length <var>n</var>, one of bits and one of bases. Basis 0 is <span class="b b-z">Z</span> (rectilinear) and basis 1 is <span class="b b-x">X</span> (diagonal). No state vector or amplitude is stored anywhere in Layer 1.</p>
+
+  <div class="table-wrap fit">
+    <table class="states">
+      <thead><tr><th scope="col">Basis</th><th scope="col">bit = 0</th><th scope="col">bit = 1</th></tr></thead>
+      <tbody>
+        <tr><th scope="row"><span class="b b-z">Z</span> <span class="mono">0</span></th><td>|0⟩</td><td>|1⟩</td></tr>
+        <tr><th scope="row"><span class="b b-x">X</span> <span class="mono">1</span></th><td>|+⟩</td><td>|−⟩</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>The measurement rule</h3>
+  <p>All of the quantum behaviour in the model comes from one function, <code>bob.measure()</code>. It compares the basis a qubit carries with the basis it is measured in. Eve's measurement calls the same function.</p>
+
+  <figure class="matrix-fig">
+    <div class="matrix" role="table" aria-label="Measurement outcome by carried basis and measurement basis">
+      <div class="corner" role="columnheader">rows: basis carried<br>columns: basis measured</div>
+      <div class="colhead" role="columnheader">Measured in <span class="b b-z">Z</span></div>
+      <div class="colhead" role="columnheader">Measured in <span class="b b-x">X</span></div>
+
+      <div class="rowhead" role="rowheader">Carries <span class="b b-z">Z</span></div>
+      <div class="cell exact" role="cell"><strong>Exact</strong><span>returns its bit</span></div>
+      <div class="cell coin" role="cell"><strong>Coin flip</strong><span>p = 1/2 either way</span></div>
+
+      <div class="rowhead" role="rowheader">Carries <span class="b b-x">X</span></div>
+      <div class="cell coin" role="cell"><strong>Coin flip</strong><span>p = 1/2 either way</span></div>
+      <div class="cell exact" role="cell"><strong>Exact</strong><span>returns its bit</span></div>
+    </div>
+    <figcaption>Implemented as <code>np.where(carried_bases == measurement_bases, carried_bits, random_outcomes)</code>. A random bit is drawn for every position and used only where the bases differ, so the number of random draws never depends on the data. Solid cells are exact; hatched cells with a dashed outline are coin flips.</figcaption>
+  </figure>
+
+  <p><strong>The rule is exact for BB84's four states.</strong> Measuring a state in its own basis gives the encoded bit with probability 1. Measuring it in the other basis gives each outcome with probability <span class="nowrap">|⟨0|+⟩|² = |⟨1|+⟩|² = 1/2</span>, and the same holds for <span class="nowrap">|−⟩</span>. Those are the only two cases BB84 ever produces, so a basis comparison and one fair random bit reproduce the Born-rule outcome distribution exactly. No amplitudes are needed.</p>
+  <p>The cost is one comparison and one random bit per qubit. The full quantum stage (Alice, Eve, noise, loss, Bob and sifting) for 10<sup>5</sup> qubits takes a median of 3.0 ms (20 runs, <code>runner.run_quantum_stage</code>). That is what lets the experiments run 50 trials per point.</p>
+</section>
+
+<!-- ============================================================ 2 -->
+<section id="journey">
+  <h2><span class="secnum">2</span>What happens to each qubit, in order</h2>
+  <p class="source">runner.run_quantum_stage · alice.py · eve.py · channel.py · bob.py · sifting.py</p>
+
+  <p><code>runner.run_quantum_stage()</code> applies the stages below in this fixed order. Each tag gives the stage's effect on the QBER of the sifted key.</p>
+
+  <ol class="journey">
+    <li class="stage">
+      <span class="marker" aria-hidden="true">1</span>
+      <div>
+        <div class="stage-head"><h3>Alice</h3><span class="mod">alice.prepare</span><span class="tag">adds no error</span></div>
+        <p>Draws <var>n</var> bits and <var>n</var> bases, each independent and uniform. The two arrays are both the qubits she sends and her private record for sifting.</p>
+      </div>
+    </li>
+    <li class="stage">
+      <span class="marker" aria-hidden="true">2</span>
+      <div>
+        <div class="stage-head"><h3>Eve</h3><span class="mod">eve.intercept_resend</span><span class="tag qber">QBER f/4</span></div>
+        <p>Each qubit is intercepted independently with probability <var>f</var> (<code>rng.random(n) &lt; f</code>). For an intercepted qubit Eve picks a uniform random basis, measures with <code>bob.measure</code>, and replaces the qubit with <code>(her bit, her basis)</code>. Qubits she does not intercept pass through unchanged.</p>
+        <p>The re-preparation is what causes errors. Her basis is wrong with probability 1/2. The qubit then reaches Bob in the wrong basis, and on a sifted position his result is a coin flip, wrong with probability 1/2. So Q<sub>E</sub> = f × 1/2 × 1/2 = f/4.</p>
+      </div>
+    </li>
+    <li class="stage">
+      <span class="marker" aria-hidden="true">3</span>
+      <div>
+        <div class="stage-head"><h3>Noise</h3><span class="mod">channel.depolarize</span><span class="tag qber">QBER p</span></div>
+        <p>Flips the carried bit with probability <var>p</var>, independently of basis and of every other qubit. It is applied after Eve. With no Eve the sifted QBER is <var>p</var>.</p>
+        <p>The function is named for depolarizing noise, but its parameter is the bit-error rate the channel causes, not the depolarizing parameter. A channel <span class="nowrap">ρ → (1 − λ)ρ + λI/2</span> produces an error rate of λ/2 in both bases, so <var>p</var> corresponds to λ/2.</p>
+      </div>
+    </li>
+    <li class="stage">
+      <span class="marker" aria-hidden="true">4</span>
+      <div>
+        <div class="stage-head"><h3>Loss</h3><span class="mod">channel.transmit</span><span class="tag qber">QBER unchanged</span></div>
+        <p>Each qubit reaches Bob independently with probability <var>η</var>. <code>channel.transmit</code> returns the mask of survivors. <code>run_quantum_stage</code> then keeps only those positions on both sides, standing in for Bob announcing which slots produced a detection.</p>
+        <p>Loss does not depend on the bit or the basis, so it removes positions without changing the error rate among the survivors. Measured at <var>p</var> = 5% with 400,000 qubits: <var>η</var> = 1 gives 200,075 sifted bits at 4.94%, and <var>η</var> = 0.5 gives 100,300 sifted bits at 5.07%.</p>
+      </div>
+    </li>
+    <li class="stage">
+      <span class="marker" aria-hidden="true">5</span>
+      <div>
+        <div class="stage-head"><h3>Bob</h3><span class="mod">bob.receive · sifting.sift</span><span class="tag">adds no error</span></div>
+        <p>Picks a uniform random basis for each received qubit and measures with the same rule. Sifting keeps the positions where his basis equals Alice's, about half of them. On those positions any disagreement with Alice comes from stages 2 and 3.</p>
+      </div>
+    </li>
+  </ol>
+
+  <aside class="callout" aria-labelledby="compose-h">
+    <h3 id="compose-h">Composition: errors do not add</h3>
+    <p class="formula">Q = Q<sub>E</sub> + p − 2·Q<sub>E</sub>·p</p>
+    <p>A sifted bit is wrong when exactly one of the two sources flipped it. If both flipped it, the flips cancel. Eve's error and the noise flip are independent in this model, so</p>
+    <p class="formula formula-sm">Q = Q<sub>E</sub>(1 − p) + (1 − Q<sub>E</sub>)p</p>
+    <p>which expands to the formula above. Worked example: full intercept-resend (<var>f</var> = 1, so Q<sub>E</sub> = 0.25) on a channel with <var>p</var> = 0.02.</p>
+    <div class="work">
+      <span class="expr">Q<sub>E</sub> × (1 − p) = 0.25 × 0.98<span class="why">Eve's error survives, noise did not flip</span></span><span class="val">0.245</span>
+      <span class="expr">(1 − Q<sub>E</sub>) × p = 0.75 × 0.02<span class="why">noise flips a bit Eve left correct</span></span><span class="val">0.015</span>
+      <span class="expr total">Q = 0.245 + 0.015</span><span class="val total">0.260</span>
+    </div>
+    <p>The same result from the formula: 0.25 + 0.02 − 2 × 0.25 × 0.02 = 25% + 2% − 1% = <strong>26%</strong>, not the 27% that adding the rates would give. Simulated (<var>f</var> = 1, <var>p</var> = 0.02, 199,760 sifted bits): 26.07%.</p>
+  </aside>
+</section>
+
+<!-- ============================================================ 3 -->
+<section id="post">
+  <h2><span class="secnum">3</span>Classical post-processing</h2>
+  <p class="source">sifting.py · estimation.py · security.py · reconcile.py · amplify.py</p>
+
+  <div class="table-wrap">
+    <table class="stages">
+      <thead><tr><th scope="col">Stage</th><th scope="col">Module</th><th scope="col">What the code does</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>Sifting</td><td><code>sifting.py</code></td>
+          <td><code>sift()</code> keeps positions where Alice's and Bob's bases match. <code>disclose_sample()</code> then draws <var>m</var> sifted positions at random without replacement for estimation and removes them from the key. <var>m</var> = 2,000 by default (<code>PipelineConfig.sample_size</code>).</td>
+        </tr>
+        <tr>
+          <td>Estimation</td><td><code>estimation.py</code></td>
+          <td>Point estimate Q̂ = k/m from the disclosed sample, with a Wilson score interval (95% by default). The bounds are pinned to exactly 0 when k = 0 and exactly 1 when k = m. Wilson is used because the Wald interval has zero width at Q̂ = 0.</td>
+        </tr>
+        <tr>
+          <td>Decision</td><td><code>security.py</code></td>
+          <td>r(Q) = 1 − 2h(Q), evaluated at min(Q, 1/2). Abort when r(Q̂) ≤ 0. The threshold is the root of r(Q) = 0, found by bisection on (0, 1/2) with tolerance 10<sup>−12</sup>: 11.0028%. No threshold constant is written in the code.</td>
+        </tr>
+        <tr>
+          <td>Reconciliation</td><td><code>reconcile.py</code></td>
+          <td>Four block-parity passes. The first block size is round(0.73/Q̂), clamped to [4, n], and it doubles each pass. Passes 2 to 4 use a fresh public permutation. Each block with mismatched parity is binary-searched and one error is flipped. Then comes random-subset confirmation: each bit is included with probability 1/2, and a mismatched subset is bisected and corrected. It stops after 20 consecutive agreeing checks, or reports failure after 2,000 checks.</td>
+        </tr>
+        <tr>
+          <td>Amplification</td><td><code>amplify.py</code></td>
+          <td>Toeplitz hashing. The m × n matrix comes from a public seed of m + n − 1 bits, and the product is computed by FFT convolution reduced mod 2. Output length m = floor(r(Q̂)·n). Raises <code>KeyMismatchError</code> if the two input keys differ.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="split">
+    <div>
+      <p class="label">Measured from arrays</p>
+      <h3>Runs on real bits</h3>
+      <ul>
+        <li><strong>Reconciliation</strong> works on the actual sifted arrays. The code tracks <code>diff = alice ^ bob</code> and computes each parity comparison as the parity of <code>diff</code> over the compared positions. That equals comparing the two announced parities. It returns Bob's corrected key as an array.</li>
+        <li><strong>Hashing</strong> applies the same public Toeplitz seed to Alice's array and to Bob's array. The two final keys can be compared bit for bit, and the demo prints both.</li>
+        <li><strong>Diagnostics</strong> come from these arrays: leakage (every disclosed parity bit), the residual error count, and the efficiency leakage / (n·h(e)), where e is the realised error rate before reconciliation.</li>
+      </ul>
+    </div>
+    <div>
+      <p class="label">Computed from r(Q)</p>
+      <h3>Derived from the formula</h3>
+      <ul>
+        <li><strong>The key length</strong> m = floor(r(Q̂)·n) is calculated, not measured. It sets how many rows the Toeplitz matrix has.</li>
+        <li><strong>The abort decision</strong> and the 11.0028% threshold come from the same r(Q).</li>
+        <li><strong>Leakage is not subtracted</strong> from m. The two h(Q) terms in r already pay for error correction and for privacy amplification.</li>
+        <li><strong>Eve's remaining information</strong> about the hashed key is never computed. The length is a bound that holds under the assumptions below.</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>Model assumptions</h3>
+  <p class="note">Stated in the <code>security.py</code> docstring. The rate formula and the threshold hold only under these.</p>
+  <ol class="assumptions">
+    <li><span>Asymptotic regime: no finite-size correction to r(Q).</span></li>
+    <li><span>One-way post-processing.</span></li>
+    <li><span>Collective attacks.</span></li>
+    <li><span>Ideal single-photon source.</span></li>
+    <li><span>The same QBER in the <span class="b b-z">Z</span> and <span class="b b-x">X</span> bases.</span></li>
+  </ol>
+  <p class="note">The threshold is a property of these assumptions, not a constant of BB84. With two-way post-processing the tolerable QBER rises to about 18.9–20%.</p>
+</section>
+
+<!-- ============================================================ 4 -->
+<section id="omitted">
+  <h2><span class="secnum">4</span>What the model leaves out</h2>
+  <p>Each item below is absent from the code. A reviewer can ask about any of them.</p>
+
+  <dl class="omissions">
+    <div>
+      <dt>Optics</dt>
+      <dd><p>No polarisation or phase encoding, no drift and no misalignment. Every channel error is a bit flip with probability <var>p</var>, independent of basis.</p></dd>
+    </div>
+    <div>
+      <dt>Detector effects</dt>
+      <dd><p>Missing are dark counts, afterpulsing, dead time and efficiency mismatch between detectors. A uniform detector efficiency is not missing: it multiplies the transmittance, so it is absorbed into <var>η</var>.</p></dd>
+    </div>
+    <div>
+      <dt>Source effects</dt>
+      <dd><p>The source is an ideal single-photon source. There are no multi-photon pulses, so no photon-number-splitting attack and no decoy states.</p></dd>
+    </div>
+    <div>
+      <dt>Finite-key effects</dt>
+      <dd><p>Key rate and threshold are asymptotic. The abort decision uses the point estimate Q̂ from a 2,000-bit sample. The Wilson interval is reported but does not enter the decision.</p></dd>
+    </div>
+    <div>
+      <dt>Other attacks</dt>
+      <dd><p>The only simulated attack is intercept-resend with a uniform random basis. There are no cloning attacks and no simulated collective or coherent attacks. Collective attacks appear only as an assumption of the rate formula. The classical channel is assumed authenticated and is not attacked.</p></dd>
+    </div>
+    <div>
+      <dt>Statistical edge cases</dt>
+      <dd><p>Every flip, loss and basis choice is independent and identically distributed per qubit. There are no burst errors, no time correlation and no basis-dependent error rates, so the <span class="b b-z">Z</span> and <span class="b b-x">X</span> QBERs are equal by construction.</p></dd>
+    </div>
+  </dl>
+</section>
+
+<!-- ============================================================ 5 -->
+<section id="qiskit">
+  <h2><span class="secnum">5</span>The Qiskit layer</h2>
+  <p class="source">qiskit_demo.py</p>
+
+  <p><code>qiskit_demo.build_circuit()</code> runs the same protocol as quantum circuits on Qiskit Aer. Each BB84 round is one qubit. Dashed gates are applied only when the condition under them holds.</p>
+
+  <div class="circuits">
+    <div class="party">
+      <div class="who">Alice<small>encode</small></div>
+      <div class="wire">
+        <span class="gate"><span class="g">|0⟩</span><span class="when">start</span></span>
+        <span class="link" aria-hidden="true">─</span>
+        <span class="gate cond"><span class="g">X</span><span class="when">if bit = 1</span></span>
+        <span class="link" aria-hidden="true">─</span>
+        <span class="gate cond"><span class="g">H</span><span class="when">if basis <span class="b b-x">X</span></span></span>
+      </div>
+    </div>
+    <div class="party">
+      <div class="who">Eve<small>optional</small></div>
+      <div class="wire">
+        <span class="gate cond"><span class="g">H</span><span class="when">if basis <span class="b b-x">X</span></span></span>
+        <span class="link" aria-hidden="true">─</span>
+        <span class="gate meas"><span class="g">M</span><span class="when">→ eve register</span></span>
+        <span class="link" aria-hidden="true">─</span>
+        <span class="gate cond"><span class="g">H</span><span class="when">if basis <span class="b b-x">X</span></span></span>
+      </div>
+    </div>
+    <div class="party">
+      <div class="who">Bob<small>measure</small></div>
+      <div class="wire">
+        <span class="gate cond"><span class="g">H</span><span class="when">if basis <span class="b b-x">X</span></span></span>
+        <span class="link" aria-hidden="true">─</span>
+        <span class="gate meas"><span class="g">M</span><span class="when">→ bob register</span></span>
+      </div>
+    </div>
+  </div>
+
+  <p>Eve's re-preparation happens through measurement collapse. After her measurement the qubit is in her measured state in the <span class="b b-z">Z</span> frame, and the second H, applied when her basis is <span class="b b-x">X</span>, rotates it back to her basis. Rounds are batched eight qubits per circuit and run with one shot each, using fixed simulator and transpiler seeds.</p>
+
+  <p><strong>It is a cross-check only.</strong> No experiment depends on it. Circuit simulation cannot reach the sample sizes the statistics need, and for BB84's four states it adds nothing to correctness (section 1). It shows that the probability model and a circuit-level simulation give the same QBER.</p>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Run</th><th scope="col" class="num">Rounds</th><th scope="col" class="num">Sifted</th><th scope="col" class="num">QBER</th><th scope="col" class="num">Expected</th></tr></thead>
+      <tbody>
+        <tr><td>No Eve</td><td class="num">800</td><td class="num">383</td><td class="num">0.000</td><td class="num">0</td></tr>
+        <tr><td>Eve, <var>f</var> = 1</td><td class="num">800</td><td class="num">383</td><td class="num">0.251</td><td class="num">0.25</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">From <code>python -m bb84.qiskit_demo</code>. The statistics run uses seed 43, which is the default <code>--seed 42</code> plus 1, as <code>main()</code> sets it.</p>
+</section>
+
+<footer>
+  <p>Written from the <code>bb84/</code> module source. Protocol: Bennett &amp; Brassard (1984). Key rate r(Q) = 1 − 2h(Q): Shor &amp; Preskill (2000).</p>
+  <p>All key lengths are estimated final key lengths under the assumptions of the implemented model.</p>
+</footer>
+
+</main>
+</body>
+</html>

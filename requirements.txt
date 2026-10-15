@@ -1,0 +1,7 @@
+numpy>=1.26
+scipy>=1.11
+matplotlib>=3.8
+pytest>=8.0
+qiskit>=1.0
+qiskit-aer>=0.14
+pylatexenc>=2.10
